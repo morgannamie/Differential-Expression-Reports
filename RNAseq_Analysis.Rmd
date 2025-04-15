@@ -1,0 +1,483 @@
+---
+title: "RNAseq_analysis"
+output: html_document
+date: "`r Sys.Date()`"
+params:
+    dds_object: NULL
+    p_value_cutoff: 0.05
+    fc_cutoff: 1.5
+    control_name: NULL 
+    normalization_method: "vst"
+    use_adjusted_pvalue: TRUE
+    output_dir: NULL
+---
+
+
+```{r color-config, echo=FALSE}
+#Colors for various plots
+colors = c("#B93888", "#0E62B7", "#2A890D", "#FFB202", "#0396AF", "#173D58", "#563A93", "#E31C1C", "#13C8D3", 
+"#1F125F", "#E8BC1E", "#007C9F", "#AF30C5", "#72144D", "#25B919", "#563493", "#0396AF", "#FFB202")
+```
+
+```{r setup, include=FALSE}
+install_and_load <- function(pkg) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg, repos = "https://cloud.r-project.org")
+  }
+  suppressPackageStartupMessages(library(pkg, character.only = TRUE))
+}
+cran_packages <- c("plotly", "DT", "tools", "htmltools", "heatmaply", "viridis", "rmarkdown")
+sapply(cran_packages, install_and_load)
+
+#Install and load DESeq2 from Bioconductor
+if (!requireNamespace("DESeq2", quietly = TRUE)) {
+  if (!requireNamespace("BiocManager", quietly = TRUE)) {
+    install.packages("BiocManager", repos = "https://cloud.r-project.org")
+  }
+  BiocManager::install("DESeq2", ask = FALSE)
+}
+suppressPackageStartupMessages(library(DESeq2))
+
+#Load the dds object from the parameter passed to the document
+dds <- readRDS(params$dds_object)
+log2_fc_cutoff <- log2(params$fc_cutoff)
+```
+
+
+### <span style="color: #007C9F;"> Run Parameters </span> ###
+```{r params-table, echo=FALSE, results='asis'}
+#Create a data frame to display the parameters used in the run
+params_df <- data.frame(
+  Parameter = c("dds_object", "p_value_cutoff", "fc_cutoff", "control_name", "normalization_method", "use_adjusted_pvalue"),
+  Value = c(as.character(params$dds_object), as.character(params$p_value_cutoff), as.character(params$fc_cutoff), 
+            as.character(params$control_name), as.character(params$normalization_method), as.character(params$use_adjusted_pvalue))
+)
+datatable(params_df, 
+          options = list(
+            pageLength = 10,  
+            search = list(  
+              caseInsensitive = TRUE,  
+              searchDelay = 500        
+            )
+          ),   
+          caption = "Parameter Values Used in the Run"
+)
+```
+
+### <span style="color: #007C9F;"> MA Plots </span> ###
+```{r interactive-ma, echo=FALSE, results='asis'}
+processResults <- function(res, p_value_cutoff, log2_fc_cutoff, use_adjusted_pvalue) {
+  #Convert to data frame
+  full_de <- as.data.frame(res)
+  #Add row names as a column
+  full_de$gene_id <- rownames(full_de)
+  #Determine which p-value column to use
+  y_value <- if (use_adjusted_pvalue) "padj" else "pvalue"
+  #Remove rows with NA in essential columns
+  full_de <- full_de[!is.na(full_de$log2FoldChange) & 
+                     !is.na(full_de$pvalue) & 
+                     !is.na(full_de$padj), ]
+  #Set differential status
+  full_de$differential_status <- "Not significant"
+  full_de$differential_status[abs(full_de$log2FoldChange) >= log2_fc_cutoff & 
+                             full_de[[y_value]] <= p_value_cutoff] <- "Significant by Both"
+  full_de$differential_status[abs(full_de$log2FoldChange) >= log2_fc_cutoff & 
+                             full_de[[y_value]] > p_value_cutoff] <- "Significant by Fold Change"
+  full_de$differential_status[abs(full_de$log2FoldChange) < log2_fc_cutoff & 
+                             full_de[[y_value]] <= p_value_cutoff] <- "Significant by P-Value"
+  full_de$differential_status <- factor(
+    full_de$differential_status,
+    levels = c("Not significant", "Significant by Fold Change", "Significant by P-Value", "Significant by Both"),
+    ordered = TRUE
+  )
+  return(full_de)
+}
+
+
+#Function to create an interactive MA plot using plotly
+createInteractiveMAPlot <- function(dds, controlName, p_value_cutoff, log2_fc_cutoff, use_adjusted_pvalue) {
+  conditions <- setdiff(levels(dds$condition), controlName) # Exclude the control condition
+  
+  #Create an empty list to store plots
+  plot_list <- list()
+  for (conditionName in conditions) {
+    tryCatch({
+      #Retrieve differential expression results for the specified comparison
+      res <- results(dds, contrast = c("condition", conditionName, controlName))
+      #Process results
+      full_de <- processResults(res, p_value_cutoff, log2_fc_cutoff, use_adjusted_pvalue)
+      #Determine which p-value column to use
+      y_value <- if (use_adjusted_pvalue) "padj" else "pvalue"
+      #Create hover text
+      full_de$hover_text <- paste(
+        "Gene: ", full_de$gene_id,
+        "<br>Base Mean: ", round(full_de$baseMean, 1),
+        "<br>Log2 Fold Change: ", round(full_de$log2FoldChange, 3),
+        "<br>", if (use_adjusted_pvalue) "Adjusted p-value: " else "P-value: ", 
+        format(full_de[[y_value]], scientific = TRUE, digits = 3)
+      )
+      #Create the interactive plot using plot_ly
+      p <- plot_ly(
+        data = full_de,
+        x = ~baseMean,  
+        y = ~log2FoldChange,  
+        type = 'scatter',
+        mode = 'markers',
+        color = ~differential_status,
+        text = ~hover_text,
+        hoverinfo = 'text',
+        colors = c('#7f7f7f', '#0E62B7', '#2a890D', '#e31C1C'),
+        marker = list(size = 5, opacity = 0.7),
+        width = 1100,
+        height = 800
+      ) %>%
+        layout(
+          title = list(
+            text = paste(conditionName, "vs", controlName),
+            x = 0.5,
+            xanchor = "center",
+            yanchor = "top"
+          ),
+          xaxis = list(
+            title = "Mean Expression (BaseMean)",
+            showline = TRUE,
+            linecolor = 'black',
+            showgrid = FALSE,
+            ticks = "outside"
+          ),
+          yaxis = list(title = "Log2 Fold Change"),
+          shapes = list(
+            list(type = "line", x0 = min(full_de$baseMean), x1 = max(full_de$baseMean), 
+                 y0 = log2_fc_cutoff, y1 = log2_fc_cutoff, line = list(dash = 'dot')),
+            list(type = "line", x0 = min(full_de$baseMean), x1 = max(full_de$baseMean), 
+                 y0 = -log2_fc_cutoff, y1 = -log2_fc_cutoff, line = list(dash = 'dot'))
+          )
+        )
+      #Add plot to the list
+      plot_list[[conditionName]] <- tagList(
+        h4(paste(conditionName, "vs", controlName)),
+        p
+      )
+      
+    }, error = function(e) {
+      cat("Error creating MA plot for", conditionName, "vs", controlName, ":", e$message, "\n")
+    })
+  }
+  
+  #Add explanatory text before the plots
+  cat("The MA plots show the log2 fold change (y-axis) versus the mean expression (x-axis) for each gene in the comparison between a condition and the control.")
+  cat("\n")
+  cat("Genes are colored based on their differential expression status, which is determined by the user-specified log2 fold change and p-value cutoffs.")
+  cat("\n")
+  cat(paste0("Significance filtering criteria:"))
+  cat("\n")
+  cat("\n")
+  cat("\n")
+  cat(paste0("- Fold change cutoff: ", params$fc_cutoff))
+  cat("\n")
+  cat(paste0("- P-value cutoff: ", params$p_value_cutoff))
+  cat("\n")
+  cat(paste0("- ", ifelse(params$use_adjusted_pvalue, "Adjusted p-value used", "Raw p-value used")))
+
+  #Use htmltools::tagList to display all plots in the same output
+  htmltools::tagList(plot_list)
+}
+
+#Call the function with specified parameters
+createInteractiveMAPlot(dds, params$control_name, params$p_value_cutoff, log2_fc_cutoff, use_adjusted_pvalue = params$use_adjusted_pvalue)
+```
+
+### <span style="color: #007C9F;"> PCA Plot </span> ###
+
+```{r pca-plot, echo=FALSE, results='asis', warning=FALSE, message=FALSE}
+#Function to apply the selected normalization method for PCA plot
+applyNormalizationPCA <- function(dds, method) {
+  if (method == "sizeFactor") {
+    dds <- estimateSizeFactors(dds)
+  } else if (method == "rlog") {
+    dds <- rlog(dds)
+  } else {
+    dds <- vst(dds, blind = FALSE) 
+  }
+  return(dds)
+}
+
+#Apply the selected normalization method for PCA plot
+vsd <- applyNormalizationPCA(dds, params$normalization_method)
+pcaData <- plotPCA(vsd, intgroup=c("condition"), returnData=TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+unique_conditions <- unique(pcaData$condition)
+colors_subset <- colors[seq_len(length(unique_conditions))]
+fig <- plot_ly(
+  pcaData, 
+  x = ~PC1, 
+  y = ~PC2, 
+  color = ~condition,
+  colors = colors_subset,
+  text = ~paste("Sample:", name), 
+  type = "scatter", 
+  mode = "markers",
+  hoverinfo = 'text', 
+  marker = list(size = 12)  
+) %>%
+layout(
+  title = paste0("PCA Plot"),
+  xaxis = list(title = paste0("PC1 ", "(", percentVar[1], "% variance)")),
+  yaxis = list(title = paste0("PC2 ", "(", percentVar[2], "% variance)")),
+  margin = list(l = 120, r = 120, b = 100, t = 100, pad = 5)  # Adjust margins for aesthetics
+)
+
+cat("The PCA plot visualizes the principal components of the normalized gene expression data. Each point represents a sample, and samples are colored by their condition. The plot helps to identify patterns and clustering of samples based on their gene expression profiles.")
+
+cat(paste0("The data has been normalized using the ", params$normalization_method, " method before applying PCA."))
+
+fig
+```
+
+### <span style="color: #007C9F;"> Differentially Expressed Gene Counts </span> ###
+```{r differential-gene-count, echo=FALSE, results='asis'}
+#Function to count differentially expressed genes
+countDifferentialGenes <- function(dds, controlName, p_value_cutoff, log2_fc_cutoff, use_adjusted_pvalue) {
+  conditions <- setdiff(levels(dds$condition), controlName)
+  #Create a list to store results
+  de_gene_counts <- list()
+  for (conditionName in conditions) {
+    tryCatch({
+      #Retrieve and process results
+      res <- results(dds, contrast = c("condition", conditionName, controlName))
+      full_de <- processResults(res, p_value_cutoff, log2_fc_cutoff, use_adjusted_pvalue)
+      #Determine which p-value column to use
+      y_value <- if (use_adjusted_pvalue) "padj" else "pvalue"
+      #Count upregulated genes
+      upregulated_count <- sum(full_de$log2FoldChange >= log2_fc_cutoff & 
+                              full_de[[y_value]] <= p_value_cutoff)
+      #Count downregulated genes
+      downregulated_count <- sum(full_de$log2FoldChange <= -log2_fc_cutoff & 
+                                full_de[[y_value]] <= p_value_cutoff)
+      #Store counts for this comparison
+      de_gene_counts[[conditionName]] <- data.frame(
+        Comparison = paste(conditionName, "vs", controlName),
+        Upregulated = upregulated_count,
+        Downregulated = downregulated_count,
+        Total_Differentially_Expressed = upregulated_count + downregulated_count
+      )
+    }, error = function(e) {
+      cat("Error counting differential genes for", conditionName, "vs", controlName, ":", e$message, "\n")
+    })
+  }
+  
+  #Combine all results into a single data frame
+  final_de_counts <- do.call(rbind, de_gene_counts)
+  #Create an interactive table
+  datatable(final_de_counts, 
+            options = list(
+              pageLength = nrow(final_de_counts),
+              searching = FALSE,
+              lengthChange = FALSE,
+              info = FALSE,
+              paging = FALSE
+            ),
+            caption = paste0("(P-value threshold: ", 
+                          p_value_cutoff, 
+                          ", Fold Change threshold: ", 
+                          params$fc_cutoff, "-fold",
+                          ", ", 
+                          ifelse(use_adjusted_pvalue, "Adjusted p-value", "P-value"),
+                          " used)")
+  )
+}
+
+cat("The table below summarizes the number of differentially expressed genes for each comparison between a condition and the control.")
+cat("\n")
+cat("Genes are considered differentially expressed if they meet the user-specified fold change and p-value cutoffs.")
+cat("\n")
+cat(paste0("Significance filtering criteria:"))
+
+#Call the function with specified parameters
+countDifferentialGenes(dds, params$control_name, params$p_value_cutoff, log2_fc_cutoff, use_adjusted_pvalue = params$use_adjusted_pvalue)
+```
+
+### <span style="color: #007C9F;"> Volcano Plots and Expression Summary Tables </span> ###
+```{r interactive-volcano, echo=FALSE, results='asis'}
+#Function to create an interactive volcano plot using plotly and summary table
+createInteractiveVolcanoPlotWithSummary <- function(dds, controlName, p_value_cutoff, log2_fc_cutoff, use_adjusted_pvalue) {
+  conditions <- setdiff(levels(dds$condition), controlName)
+  plot_table_list <- list()
+  for (conditionName in conditions) {
+    tryCatch({
+      #Get results and process them
+      res <- results(dds, contrast = c("condition", conditionName, controlName))
+      full_de <- processResults(res, p_value_cutoff, log2_fc_cutoff, use_adjusted_pvalue)
+      #Determine which p-value column to use
+      y_value <- if (use_adjusted_pvalue) "padj" else "pvalue"
+      y_label <- if (use_adjusted_pvalue) "-Log10 Adjusted P-Value" else "-Log10 P-Value"
+      #Calculate -log10 of p-values for plotting
+      full_de$neg_log10_p <- -log10(full_de[[y_value]])
+      #Create hover text
+      full_de$hover_text <- paste(
+        "Gene: ", full_de$gene_id,
+        "<br>Log2 Fold Change: ", round(full_de$log2FoldChange, 3),
+        "<br>", if (use_adjusted_pvalue) "Adjusted p-value: " else "P-value: ", 
+        format(full_de[[y_value]], scientific = TRUE, digits = 3)
+      )
+      #Create volcano plot
+      volcano_plot <- plot_ly(
+        data = full_de,
+        x = ~log2FoldChange,
+        y = ~neg_log10_p,
+        type = 'scatter',
+        mode = 'markers',
+        color = ~differential_status,
+        text = ~hover_text,
+        hoverinfo = 'text',
+        colors = c('#7f7f7f', '#0E62B7', '#2a890D', '#e31C1C'),
+        marker = list(size = 5, opacity = 0.7),
+        width = 900,
+        height = 600
+      ) %>%
+        layout(
+          title = list(
+            text = paste(conditionName, "vs", controlName),
+            x = 0.5,
+            xanchor = "center",
+            yanchor = "top"
+          ),
+          xaxis = list(
+            title = "Log2 Fold Change",
+            zeroline = TRUE,
+            zerolinewidth = 2,
+            zerolinecolor = '#000000',
+            showline = TRUE,
+            linecolor = 'black',
+            showgrid = FALSE,
+            ticks = "outside"
+          ),
+          yaxis = list(title = y_label),
+          shapes = list(
+            list(type = "line", x0 = -log2_fc_cutoff, x1 = -log2_fc_cutoff, 
+                 y0 = 0, y1 = max(full_de$neg_log10_p), line = list(dash = 'dot')),
+            list(type = "line", x0 = log2_fc_cutoff, x1 = log2_fc_cutoff, 
+                 y0 = 0, y1 = max(full_de$neg_log10_p), line = list(dash = 'dot')),
+            list(type = "line", x0 = min(full_de$log2FoldChange), x1 = max(full_de$log2FoldChange), 
+                 y0 = -log10(p_value_cutoff), y1 = -log10(p_value_cutoff), line = list(dash = 'dot'))
+          )
+        )
+      #Create summary tables
+      columns_to_keep <- c("baseMean", "log2FoldChange", "lfcSE", "pvalue", "padj")
+      #Filter for upregulated genes
+      upregulated_genes <- subset(full_de, 
+                                log2FoldChange >= log2_fc_cutoff & 
+                                  full_de[[y_value]] <= p_value_cutoff,
+                                select = columns_to_keep)
+      
+      #Filter for downregulated genes
+      downregulated_genes <- subset(full_de,
+                                  log2FoldChange <= -log2_fc_cutoff & 
+                                    full_de[[y_value]] <= p_value_cutoff,
+                                  select = columns_to_keep)
+      
+      #Rename columns
+      colnames(upregulated_genes) <- c("Base Mean", "Log2 Fold Change", "LFC Standard Error", "P-value", "Adjusted P-value")
+      colnames(downregulated_genes) <- c("Base Mean", "Log2 Fold Change", "LFC Standard Error", "P-value", "Adjusted P-value")
+      
+      #Create interactive tables to be able to search genes
+      table_up <- datatable(upregulated_genes, 
+                          options = list(pageLength = 10, 
+                                       search = list(caseInsensitive = TRUE, searchDelay = 500)),
+                          caption = paste('Upregulated Genes in', conditionName, "vs", controlName))
+      table_down <- datatable(downregulated_genes, 
+                            options = list(pageLength = 10, 
+                                         search = list(caseInsensitive = TRUE, searchDelay = 500)),
+                            caption = paste('Downregulated Genes in', conditionName, "vs", controlName))
+      
+      #Combine plot and tables
+      plot_table_list[[conditionName]] <- tagList(
+        h4(paste(conditionName, "vs", controlName)),
+        volcano_plot, 
+        table_up, 
+        table_down
+      )
+    }, error = function(e) {
+      cat("Error creating volcano plot and table for", conditionName, "vs", controlName, ":", e$message, "\n")
+    })
+  }
+  htmltools::tagList(plot_table_list)
+}
+
+cat("The volcano plots show the negative log10 p-value (y-axis) versus the log2 transformed fold change (x-axis) for each gene in the comparison between a condition and the control.")
+cat("\n")
+cat("Genes are colored based on their differential expression status, which is determined by the user-specified fold change and p-value cutoffs.")
+cat("\n")
+cat(paste0("Significance filtering criteria:"))
+cat("\n") 
+cat("\n") 
+cat("\n")
+cat(paste0("- Fold change cutoff: ", params$fc_cutoff))
+cat("\n")
+cat(paste0("- P-value cutoff: ", params$p_value_cutoff))
+cat("\n")
+cat(paste0("- ", ifelse(params$use_adjusted_pvalue, "Adjusted p-value used", "Raw p-value used")))
+cat("\n")
+cat("\n")
+cat("\n")
+cat("The accompanying summary tables provide the list of upregulated and downregulated genes based on the specified cutoffs, along with their base mean expression, log2 fold change, and p-value.")
+
+#Call the function with specified parameters
+createInteractiveVolcanoPlotWithSummary(dds, params$control_name, params$p_value_cutoff, log2_fc_cutoff, use_adjusted_pvalue = params$use_adjusted_pvalue)
+```
+
+### <span style="color: #007C9F;"> Heatmap </span> ###
+```{r heatmap-text, echo=FALSE, results='asis'}
+#Add explanatory text before the heatmap
+cat("The heatmap displays the normalized expression values for the top 50 genes with the highest variance across samples.")
+cat("\n")
+cat("Genes (rows) and samples (columns) are clustered based on their expression patterns, helping to identify groups of genes with similar expression profiles and groups of samples with similar gene expression.")
+cat("\n")
+cat(paste0("The data has been normalized using the <b>", params$normalization_method, "</b> method before generating the heatmap."))
+cat("\n")
+cat("The color scale represents the normalized expression values, with darker colors indicating higher expression and lighter colors indicating lower expression.")
+cat("\n")
+```
+
+```{r interactive-heatmap, echo=FALSE, message=FALSE, warning=FALSE}
+applyNormalizationHeatmap <- function(dds, method) {
+  if (method == "sizeFactor") {
+    dds <- estimateSizeFactors(dds)
+  } else if (method == "rlog") {
+    dds <- rlog(dds)
+  } else {
+    dds <- vst(dds, blind = FALSE) #Default is vst
+  }
+  return(dds)
+}
+
+vsd <- applyNormalizationHeatmap(dds, params$normalization_method)
+mat <- assay(vsd)
+top_genes <- head(order(rowVars(mat), decreasing = TRUE), 50)
+
+mat_subset <- mat[top_genes, ]
+#Calculate dynamic width:
+num_samples <- ncol(mat_subset)
+#Each sample allocated 25 pixels
+dynamic_width <- max(1300, num_samples * 25)
+heatmaply(
+  mat_subset,
+  k_row = 3,  #Clusters for rows
+  k_col = 2,  #Clusters for columns
+  colors = viridis::plasma(256),
+  dendrogram = "both",
+  Rowv = TRUE,
+  Colv = TRUE,
+  clustering_distance_rows = "euclidean",  
+  clustering_distance_cols = "euclidean", 
+  clustering_method = "average",  
+  show_rownames = FALSE,  
+  show_colnames = TRUE,  
+  main = "Top 50 genes by variance", 
+  xlab = "Samples", 
+  ylab = "Genes", 
+  grid_color = "gray",  
+  width = dynamic_width, 
+  height = 1000   
+)
+```
