@@ -44,4 +44,15 @@ These visualizations are designed to be interactive, making it easier to explore
   - `htmltools`
   - `heatmaply`
   - `viridis`
+    
+ ## Sample Command
+  Rscript generate_report.R \
+  --output_dir "/path/to/output" \
+  --dds_object "/path/to/dds_object.rds" \
+  --rmd_file "/path/to/RNAseq_Analysis.Rmd" \
+  --control_name "WT" \
+  --p_value_cutoff 0.05 \
+  --fc_cutoff 1.5 \
+  --normalization_method "vst" \
+  --use_adjusted_pvalue FALSE
 
