@@ -35,7 +35,6 @@ When the report is generated, it includes the following sections:
 These visualizations are designed to be interactive, making it easier to explore your RNAseq data results.
 
 ## Requirements
-- R (version 3.6 or later is recommended)
 - The following R packages (the script will install these if they are missing):
   - `argparse`
   - `rmarkdown`
