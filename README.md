@@ -1,5 +1,5 @@
 # Differential-Expression-Reports
-This repository contains scripts for generating interactive RNAseq analysis reports using DESeq2 output and R Markdown templates. The main script provides a command-line interface (CLI) using the `argparse` package so you can easily customize the parameters such as the output directory, DESeq2 object file, R Markdown template, control group name, and several optional settings (e.g., p-value cutoff, fold change cutoff, normalization method).
+This repository contains scripts for generating interactive RNAseq analysis reports using DESeq2 (dds) output and R Markdown templates. The main script provides a command-line interface (CLI) using the `argparse` package so you can easily customize the parameters such as the output directory, DESeq2 object file, R Markdown template, control group name, and several optional settings (e.g., p-value cutoff, fold change cutoff, normalization method).
 
 ## Repository Contents
 - **generate_report.R**  
@@ -15,11 +15,24 @@ This repository contains scripts for generating interactive RNAseq analysis repo
 - **Parameterization:**  
   The R Markdown template declares default parameters (e.g., `dds_object`, `p_value_cutoff`, `fc_cutoff`, `control_name`, etc.). These defaults can be overridden at runtime by passing parameters via the CLI.
 
-- **Dynamic Package Management:**  
-  The script automatically installs any missing CRAN or Bioconductor packages so you don't have to manually install dependencies.
+When the report is generated, it includes the following sections:
 
-- **Dynamic Visualization Adjustments:**  
-  The heatmap visualization's width is dynamically adjusted based on the number of samples, and the sample labels can be rotated vertically to save space.
+- **Parameter Summary Table:**  
+  A table that displays the parameters used in the analysis. This includes the file paths for the DESeq2 object and the R Markdown template, p-value cutoff, fold change cutoff, control group name, normalization method, and other key inputs.
+
+- **MA Plots:**  
+  Interactive MA plots for each condition vs. control, showing log2 fold changes against the base mean expression with gene-level details available on hover.
+
+- **PCA Plot:**  
+  A principal component analysis plot that clusters and visualizes samples based on normalized gene expression data.
+
+- **Volcano Plots and Expression Summary Tables:**  
+  Interactive volcano plots that visualize differential expression alongside summary tables listing upregulated and downregulated genes.
+
+- **Dynamic Heatmap:**  
+  A heatmap displaying the top 50 genes by variance, with dynamic width adjusted according to the number of samples and vertical sample labels for better space utilization.
+
+These visualizations are designed to be interactive, making it easier to explore your RNAseq data results.
 
 ## Requirements
 - R (version 3.6 or later is recommended)
@@ -33,8 +46,3 @@ This repository contains scripts for generating interactive RNAseq analysis repo
   - `heatmaply`
   - `viridis`
 
-## Installation
-1. **Clone the Repository:**
-   ```bash
-   git clone https://github.com/yourusername/rnaseq-analysis-report-generator.git
-   cd rnaseq-analysis-report-generator
