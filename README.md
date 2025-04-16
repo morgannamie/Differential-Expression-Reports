@@ -8,8 +8,12 @@ This repository contains scripts for generating interactive RNAseq analysis repo
 - **RNAseq_Analysis.Rmd**  
   An R Markdown template that defines report parameters in its YAML header along with analysis code chunks. These include generating MA plots, PCA plots, volcano plots, and dynamic heatmaps.
 
+- **Sample Report**  
+  Interactive HTML report that is created by the scripts containing differential expression visualizations and other run information.
+  
 - **README.md**  
   This file, which describes the project and how to use the scripts.
+  
 
 ## Features
 - **Parameterization:**  
