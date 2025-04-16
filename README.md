@@ -10,6 +10,9 @@ This repository contains scripts for generating interactive RNAseq analysis repo
 
 - **Sample Report**  
   Interactive HTML report that is created by the scripts containing differential expression visualizations and other run information.
+
+- **DDS File**  
+  The output dds object from DESeq2. This particular dds object comes from the workflow done in https://github.com/morgannamie/Bulk-RNA-Seq 
   
 - **README.md**  
   This file, which describes the project and how to use the scripts.
