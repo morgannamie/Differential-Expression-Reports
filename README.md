@@ -1,5 +1,5 @@
 # Differential-Expression-Reports
-This repository contains scripts for generating interactive RNAseq analysis reports using DESeq2 (dds) output and R Markdown templates. The main script provides a command-line interface (CLI) using the `argparse` package so you can easily customize the parameters such as the output directory, DESeq2 object file, R Markdown template, control group name, and several optional settings (e.g., p-value cutoff, fold change cutoff, normalization method).
+This repository contains scripts for generating interactive RNAseq analysis reports using any DESeq2 (dds) output and R Markdown templates. The main script provides a command-line interface (CLI) using the `argparse` package so you can easily customize the parameters such as the output directory, DESeq2 object file, R Markdown template, control group name, and several optional settings (e.g., p-value cutoff, fold change cutoff, normalization method).
 
 ## Repository Contents
 - **generate_report.R**  
