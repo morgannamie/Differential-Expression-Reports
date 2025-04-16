@@ -27,7 +27,7 @@ parser$add_argument("--control_name", required = TRUE, help = "Control group nam
 
 #Optional parameters with defaults
 parser$add_argument("--p_value_cutoff", type = "double", default = 0.05, help = "P-value cutoff for significance [default: 0.05]")
-parser$add_argument("--fc_cutoff", type = "double", default = 1.50, help = "Fold change cutoff for significance [default: 0.75]")
+parser$add_argument("--fc_cutoff", type = "double", default = 1.50, help = "Fold change cutoff for significance [default: 1.50]")
 parser$add_argument("--normalization_method", default = "vst", help = "Normalization method (vst or rlog) [default: 'vst']")
 parser$add_argument("--use_adjusted_pvalue", type = "logical", default = FALSE, help = "Use adjusted p-values for significance [default: FALSE]")
 
